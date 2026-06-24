@@ -389,7 +389,7 @@ button:disabled {
   justify-items: center;
   font-weight: 900;
   line-height: 0.9;
-  font-size: clamp(0.78rem, 1.7vw, 1rem);
+  font-size: clamp(1.05rem, 2.4vw, 1.45rem);
 }
 
 .corner.top {
