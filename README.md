@@ -8,13 +8,16 @@ A dependency-free, static Spider Solitaire game for GitHub Pages.
 - 104-card Spider deck: eight copies of A through K.
 - Standard Spider tableau deal: 54 cards dealt into 10 columns, with 50 cards left in the stock.
 - Smart click to move: click any bright movable card or ordered stack and the game chooses a legal destination.
+- Smooth slide animation after card and stack moves, especially smart-click moves.
 - Manual drag-and-drop: drag a bright card/stack when you want to choose the destination yourself.
 - Empty columns accept any card or ordered stack.
-- Blocked cards are grayed out when the cards below them do not form a descending run.
+- Blocked cards are grayed out, not transparent, when the cards below them do not form a descending run.
 - Moves and time tracking only. No score.
-- Undo button.
-- Hint button that highlights the source stack and destination column without moving anything.
+- New Game starts immediately without a confirmation prompt.
+- Undo and Hint buttons sit beside the draw pile.
+- Hint button highlights the source stack and destination column without moving anything.
 - Complete K-Q-J-10-9-8-7-6-5-4-3-2-A runs are automatically removed.
+- Smart-clicked and dragged moves slide into place so the destination is clearer.
 
 ## Files
 

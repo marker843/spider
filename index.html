@@ -4,15 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>One-Suit Spider Solitaire</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/web-animations/2.3.2/web-animations.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top-bar">
-    <div class="title-block">
-      <h1>Spider Solitaire</h1>
-      <p>One suit · black spades only</p>
-    </div>
-
     <div class="stats" aria-label="Game stats">
       <div class="stat">
         <span class="stat-label">Moves</span>
@@ -22,16 +18,10 @@
         <span class="stat-label">Time</span>
         <strong id="time">00:00</strong>
       </div>
-      <div class="stat">
-        <span class="stat-label">Runs</span>
-        <strong id="completed">0/8</strong>
-      </div>
     </div>
 
     <nav class="actions" aria-label="Game controls">
       <button id="newGameBtn" type="button">New Game</button>
-      <button id="undoBtn" type="button">Undo</button>
-      <button id="hintBtn" type="button">Hint</button>
     </nav>
   </header>
 
@@ -42,6 +32,11 @@
         <span id="stockText" class="stock-text">Deal</span>
       </button>
 
+      <div class="stock-actions" aria-label="Move controls">
+        <button id="undoBtn" type="button">Undo</button>
+        <button id="hintBtn" type="button">Hint</button>
+      </div>
+
       <div class="completed-box" aria-label="Completed runs">
         <div class="mini-card" aria-hidden="true">♠</div>
         <div>
@@ -50,17 +45,13 @@
         </div>
       </div>
 
-      <p id="message" class="message" role="status" aria-live="polite"></p>
+      <p id="message" class="sr-only" role="status" aria-live="polite"></p>
     </section>
 
     <section class="board-scroll" aria-label="Spider Solitaire board">
       <div id="tableau" class="tableau"></div>
     </section>
   </main>
-
-  <footer class="tips">
-    Click a bright card or ordered stack to smart-move it. Gray cards are blocked because the cards below them do not form a descending run. Drag a bright stack when you want to choose the destination yourself. Empty columns accept any card or ordered stack.
-  </footer>
 
   <script src="script.js" defer></script>
 </body>

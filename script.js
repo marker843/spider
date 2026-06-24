@@ -5,8 +5,9 @@
     columns: 10,
     totalRuns: 8,
     copiesPerRank: 8,
-    requireFullColumnsBeforeDeal: false,
-    historyLimit: 300
+    requireFullColumnsBeforeDeal: true,
+    historyLimit: 300,
+    moveAnimationMs: 320
   };
 
   const RANK_LABELS = new Map([
@@ -32,14 +33,15 @@
     moves: 0,
     history: [],
     hint: null,
-    message: "Click any bright card or ordered stack to smart-move it.",
+    message: "Click any bright card or ordered stack to move it.",
     won: false,
     timerRunning: false,
     timerStartedAt: 0,
     elapsedAtPause: 0,
     timerId: null,
     dragSource: null,
-    dragJustEnded: false
+    dragJustEnded: false,
+    animating: false
   };
 
   const els = {};
@@ -54,7 +56,6 @@
     els.tableau = document.getElementById("tableau");
     els.moves = document.getElementById("moves");
     els.time = document.getElementById("time");
-    els.completed = document.getElementById("completed");
     els.completedText = document.getElementById("completedText");
     els.message = document.getElementById("message");
     els.stockBtn = document.getElementById("stockBtn");
@@ -67,10 +68,6 @@
 
   function bindControls() {
     els.newGameBtn.addEventListener("click", () => {
-      if (state.moves > 0 && !state.won) {
-        const confirmed = window.confirm("Start a new game? Your current game will be lost.");
-        if (!confirmed) return;
-      }
       newGame(true);
     });
 
@@ -94,9 +91,10 @@
     state.won = false;
     state.dragSource = null;
     state.dragJustEnded = false;
+    state.animating = false;
     state.message = showFreshMessage
-      ? "New game started. Click a bright card to smart-move it."
-      : "Click any bright card or ordered stack to smart-move it.";
+      ? "New game started. Click a bright card to move it."
+      : "Click any bright card or ordered stack to move it.";
 
     for (let col = 0; col < CONFIG.columns; col += 1) {
       const count = col < 4 ? 6 : 5;
@@ -134,12 +132,12 @@
 
   function render() {
     els.moves.textContent = String(state.moves);
-    els.completed.textContent = `${state.completed}/${CONFIG.totalRuns}`;
     els.completedText.textContent = `${state.completed} of ${CONFIG.totalRuns}`;
     els.message.textContent = state.message;
-    els.undoBtn.disabled = state.history.length === 0;
-    els.hintBtn.disabled = state.won;
-    els.stockBtn.disabled = state.stock.length === 0 || state.won;
+    els.newGameBtn.disabled = state.animating;
+    els.undoBtn.disabled = state.animating || state.history.length === 0;
+    els.hintBtn.disabled = state.animating || state.won;
+    els.stockBtn.disabled = state.animating || state.stock.length === 0 || state.won;
     els.stockText.textContent = state.stock.length > 0 ? `${state.stock.length / CONFIG.columns} deals left` : "Empty";
     renderStock();
     renderTableau();
@@ -160,6 +158,7 @@
   }
 
   function renderTableau() {
+    els.tableau.classList.toggle("animating", state.animating);
     els.tableau.innerHTML = "";
 
     state.tableau.forEach((pile, col) => {
@@ -197,6 +196,7 @@
     cardEl.className = "card";
     cardEl.dataset.column = String(col);
     cardEl.dataset.index = String(index);
+    cardEl.dataset.cardId = String(card.id);
     cardEl.style.top = `calc(${index} * var(--overlap))`;
     cardEl.style.zIndex = String(index + 1);
     cardEl.setAttribute("role", "button");
@@ -234,7 +234,7 @@
 
   function onCardClick(event) {
     event.stopPropagation();
-    if (state.dragJustEnded || state.won) return;
+    if (state.dragJustEnded || state.animating || state.won) return;
 
     const source = getSourceFromElement(event.currentTarget);
 
@@ -253,7 +253,7 @@
       return;
     }
 
-    moveStack(source.col, source.index, move.destCol, "Smart move");
+    moveStack(source.col, source.index, move.destCol, "Moved");
   }
 
   function onCardKeydown(event) {
@@ -263,18 +263,18 @@
   }
 
   function onColumnClick(event) {
-    if (event.target !== event.currentTarget || state.won) return;
+    if (event.target !== event.currentTarget || state.animating || state.won) return;
     const col = Number(event.currentTarget.dataset.column);
     state.hint = null;
     state.message = state.tableau[col].length === 0
       ? `Column ${col + 1} is empty. You can drag any bright card or ordered stack here.`
-      : "Click a bright card or ordered stack to smart-move it.";
+      : "Click a bright card or ordered stack to move it.";
     render();
   }
 
   function onCardDragStart(event) {
     const source = getSourceFromElement(event.currentTarget);
-    if (!isMovableStart(source.col, source.index) || state.won) {
+    if (!isMovableStart(source.col, source.index) || state.animating || state.won) {
       event.preventDefault();
       return;
     }
@@ -341,7 +341,7 @@
   }
 
   function dealFromStock() {
-    if (state.won) return;
+    if (state.animating || state.won) return;
 
     if (state.stock.length < CONFIG.columns) {
       state.message = "The stock is empty.";
@@ -356,6 +356,8 @@
       return;
     }
 
+    const animation = captureDealAnimation();
+
     saveHistory();
     startTimerIfNeeded();
 
@@ -363,12 +365,13 @@
       const card = state.stock.pop();
       card.faceUp = true;
       state.tableau[col].push(card);
+      if (animation) animation.cards.push({ id: card.id, rect: animation.stockRect });
     }
 
     state.moves += 1;
     state.hint = null;
     state.message = "Dealt one new card to each column.";
-    afterPlayerAction();
+    afterPlayerAction(animation);
   }
 
   function moveStack(srcCol, startIndex, destCol, label) {
@@ -380,6 +383,7 @@
     }
 
     const description = describeMove(srcCol, startIndex, destCol);
+    const animation = captureMoveAnimation(srcCol, startIndex);
 
     saveHistory();
     startTimerIfNeeded();
@@ -391,11 +395,22 @@
     state.moves += 1;
     state.hint = null;
     state.message = `${label}: ${description}`;
-    afterPlayerAction();
+    afterPlayerAction(animation);
     return true;
   }
 
-  function afterPlayerAction() {
+  function afterPlayerAction(animation) {
+    if (animation && shouldAnimateMoves()) {
+      state.animating = true;
+      render();
+      animateMovedStack(animation, finishPlayerAction);
+      return;
+    }
+
+    finishPlayerAction();
+  }
+
+  function finishPlayerAction() {
     const completedNow = removeCompletedRuns();
     if (completedNow > 0) {
       state.message += ` Completed ${completedNow === 1 ? "a full K-A run" : `${completedNow} full K-A runs`}.`;
@@ -411,7 +426,7 @@
   }
 
   function undo() {
-    if (state.history.length === 0) return;
+    if (state.animating || state.history.length === 0) return;
 
     const snapshot = state.history.pop();
     state.tableau = clonePiles(snapshot.tableau);
@@ -430,7 +445,7 @@
   }
 
   function showHint() {
-    if (state.won) return;
+    if (state.animating || state.won) return;
 
     const hint = findBestGlobalMove();
     if (!hint) {
@@ -450,6 +465,105 @@
     state.hint = hint;
     state.message = `Hint: ${describeMove(hint.srcCol, hint.startIndex, hint.destCol)}`;
     render();
+  }
+
+  function captureMoveAnimation(srcCol, startIndex) {
+    const pile = state.tableau[srcCol];
+    if (!pile || startIndex < 0 || startIndex >= pile.length) return null;
+
+    const cards = pile.slice(startIndex).map((card) => {
+      const element = els.tableau.querySelector(`[data-card-id="${card.id}"]`);
+      return {
+        id: card.id,
+        rect: element ? element.getBoundingClientRect() : null
+      };
+    }).filter((item) => item.rect);
+
+    return cards.length > 0 ? { cards } : null;
+  }
+
+
+  function captureDealAnimation() {
+    if (!shouldAnimateMoves()) return null;
+    const stockRect = els.stockBtn.getBoundingClientRect();
+    return {
+      stockRect: {
+        left: stockRect.left + stockRect.width / 2,
+        top: stockRect.top + stockRect.height / 2,
+        width: 1,
+        height: 1
+      },
+      cards: []
+    };
+  }
+
+  function shouldAnimateMoves() {
+    return CONFIG.moveAnimationMs > 0
+      && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function animateMovedStack(animation, onDone) {
+    const runningAnimations = [];
+
+    animation.cards.forEach((item, stackOffset) => {
+      const target = els.tableau.querySelector(`[data-card-id="${item.id}"]`);
+      if (!target || !item.rect) return;
+
+      const targetRect = target.getBoundingClientRect();
+      const startRect = item.rect;
+
+      // Do nothing if the card hasn't moved.
+      if (Math.abs(targetRect.left - startRect.left) < 1 && Math.abs(targetRect.top - startRect.top) < 1) {
+        return;
+      }
+
+      const clone = target.cloneNode(true);
+      clone.classList.add("motion-clone");
+      clone.removeAttribute("id");
+      clone.removeAttribute("data-column");
+      clone.removeAttribute("data-index");
+      clone.removeAttribute("data-card-id");
+
+      // Position the clone exactly where the card started.
+      clone.style.left = `${startRect.left}px`;
+      clone.style.top = `${startRect.top}px`;
+      clone.style.width = `${startRect.width}px`;
+      clone.style.height = `${startRect.height}px`;
+      clone.style.zIndex = String(9000 + stackOffset);
+
+      target.classList.add("animation-hidden");
+      document.body.appendChild(clone);
+
+      // Animate the transform from the start position to the end position.
+      const effect = [
+        { transform: `translate(0, 0)` }, // Starts at its current position (which is the startRect)
+        { transform: `translate(${targetRect.left - startRect.left}px, ${targetRect.top - startRect.top}px)` } // Translates to the target position
+      ];
+
+      const timing = {
+        duration: CONFIG.moveAnimationMs,
+        easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        fill: "both"
+      };
+
+      const player = clone.animate(effect, timing);
+
+      runningAnimations.push(player.finished.catch(() => null).then(() => {
+        target.classList.remove("animation-hidden");
+        clone.remove();
+      }));
+    });
+
+    if (runningAnimations.length === 0) {
+      state.animating = false;
+      onDone();
+      return;
+    }
+
+    Promise.all(runningAnimations).then(() => {
+      state.animating = false;
+      onDone();
+    });
   }
 
   function saveHistory() {
