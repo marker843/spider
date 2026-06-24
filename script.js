@@ -5,7 +5,7 @@
     columns: 10,
     totalRuns: 8,
     copiesPerRank: 8,
-    requireFullColumnsBeforeDeal: true,
+    requireFullColumnsBeforeDeal: false,
     historyLimit: 300
   };
 
