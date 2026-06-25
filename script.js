@@ -5,7 +5,7 @@
     columns: 10,
     totalRuns: 8,
     copiesPerRank: 8,
-    requireFullColumnsBeforeDeal: true,
+    requireFullColumnsBeforeDeal: false,
     historyLimit: 300,
     moveAnimationMs: 320
   };
@@ -33,7 +33,6 @@
     moves: 0,
     history: [],
     hint: null,
-    message: "Click any bright card or ordered stack to move it.",
     won: false,
     timerRunning: false,
     timerStartedAt: 0,
@@ -57,7 +56,6 @@
     els.moves = document.getElementById("moves");
     els.time = document.getElementById("time");
     els.completedText = document.getElementById("completedText");
-    els.message = document.getElementById("message");
     els.stockBtn = document.getElementById("stockBtn");
     els.stockVisual = document.getElementById("stockVisual");
     els.stockText = document.getElementById("stockText");
@@ -76,7 +74,7 @@
     els.stockBtn.addEventListener("click", dealFromStock);
   }
 
-  function newGame(showFreshMessage) {
+  function newGame() {
     stopTimer(true);
 
     const deck = makeDeck();
@@ -92,9 +90,6 @@
     state.dragSource = null;
     state.dragJustEnded = false;
     state.animating = false;
-    state.message = showFreshMessage
-      ? "New game started. Click a bright card to move it."
-      : "Click any bright card or ordered stack to move it.";
 
     for (let col = 0; col < CONFIG.columns; col += 1) {
       const count = col < 4 ? 6 : 5;
@@ -133,7 +128,6 @@
   function render() {
     els.moves.textContent = String(state.moves);
     els.completedText.textContent = `${state.completed} of ${CONFIG.totalRuns}`;
-    els.message.textContent = state.message;
     els.newGameBtn.disabled = state.animating;
     els.undoBtn.disabled = state.animating || state.history.length === 0;
     els.hintBtn.disabled = state.animating || state.won;
@@ -240,7 +234,6 @@
 
     if (!isMovableStart(source.col, source.index)) {
       state.hint = null;
-      state.message = "That card is gray because the cards below it do not make a descending run.";
       render();
       return;
     }
@@ -248,7 +241,6 @@
     const move = findBestMoveForSource(source.col, source.index, true);
     if (!move) {
       state.hint = null;
-      state.message = `${describeStack(source.col, source.index)} has no useful legal destination right now.`;
       render();
       return;
     }
@@ -264,11 +256,7 @@
 
   function onColumnClick(event) {
     if (event.target !== event.currentTarget || state.animating || state.won) return;
-    const col = Number(event.currentTarget.dataset.column);
     state.hint = null;
-    state.message = state.tableau[col].length === 0
-      ? `Column ${col + 1} is empty. You can drag any bright card or ordered stack here.`
-      : "Click a bright card or ordered stack to move it.";
     render();
   }
 
@@ -344,14 +332,12 @@
     if (state.animating || state.won) return;
 
     if (state.stock.length < CONFIG.columns) {
-      state.message = "The stock is empty.";
       render();
       return;
     }
 
     if (CONFIG.requireFullColumnsBeforeDeal && state.tableau.some((pile) => pile.length === 0)) {
       state.hint = null;
-      state.message = "Fill every empty column before dealing from the stock.";
       render();
       return;
     }
@@ -370,19 +356,16 @@
 
     state.moves += 1;
     state.hint = null;
-    state.message = "Dealt one new card to each column.";
     afterPlayerAction(animation);
   }
 
-  function moveStack(srcCol, startIndex, destCol, label) {
+  function moveStack(srcCol, startIndex, destCol) {
     if (!canMoveTo(srcCol, startIndex, destCol)) {
       state.hint = null;
-      state.message = "That move is not legal.";
       render();
       return false;
     }
 
-    const description = describeMove(srcCol, startIndex, destCol);
     const animation = captureMoveAnimation(srcCol, startIndex);
 
     saveHistory();
@@ -394,7 +377,6 @@
 
     state.moves += 1;
     state.hint = null;
-    state.message = `${label}: ${description}`;
     afterPlayerAction(animation);
     return true;
   }
@@ -411,15 +393,11 @@
   }
 
   function finishPlayerAction() {
-    const completedNow = removeCompletedRuns();
-    if (completedNow > 0) {
-      state.message += ` Completed ${completedNow === 1 ? "a full K-A run" : `${completedNow} full K-A runs`}.`;
-    }
+    removeCompletedRuns();
 
     if (state.completed === CONFIG.totalRuns) {
       state.won = true;
       stopTimer(false);
-      state.message = `You win in ${state.moves} moves and ${formatTime(getElapsedSeconds())}!`;
     }
 
     render();
@@ -435,7 +413,6 @@
     state.moves = snapshot.moves;
     state.won = snapshot.won;
     state.hint = null;
-    state.message = "Undid the last move.";
 
     if (!state.won && state.elapsedAtPause > 0 && !state.timerRunning) {
       resumeTimer();
@@ -450,20 +427,11 @@
     const hint = findBestGlobalMove();
     if (!hint) {
       state.hint = null;
-      if (state.stock.length >= CONFIG.columns) {
-        const emptyColumns = state.tableau.some((pile) => pile.length === 0);
-        state.message = emptyColumns && CONFIG.requireFullColumnsBeforeDeal
-          ? "No useful tableau move found. Fill empty columns before dealing from the stock."
-          : "No useful tableau move found. Deal from the stock.";
-      } else {
-        state.message = "No useful tableau move found and the stock is empty.";
-      }
       render();
       return;
     }
 
     state.hint = hint;
-    state.message = `Hint: ${describeMove(hint.srcCol, hint.startIndex, hint.destCol)}`;
     render();
   }
 
@@ -747,25 +715,6 @@
     }
 
     return length;
-  }
-
-  function describeMove(srcCol, startIndex, destCol) {
-    const srcPile = state.tableau[srcCol];
-    const destPile = state.tableau[destCol];
-    const movingText = describeStack(srcCol, startIndex);
-    const destinationText = destPile.length === 0
-      ? `empty column ${destCol + 1}`
-      : `${cardName(destPile[destPile.length - 1])} in column ${destCol + 1}`;
-
-    return `Move ${movingText} from column ${srcCol + 1} to ${destinationText}.`;
-  }
-
-  function describeStack(col, startIndex) {
-    const pile = state.tableau[col];
-    const card = pile[startIndex];
-    const count = pile.length - startIndex;
-    if (count === 1) return cardName(card);
-    return `${count}-card stack starting with ${cardName(card)}`;
   }
 
   function cardName(card) {
