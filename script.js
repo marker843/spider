@@ -4,7 +4,8 @@
     const CONFIG = {
         columns: 10,
         totalRuns: 8,
-        copiesPerRank: 8,
+        allowedSuitCounts: [1, 2, 4],
+        defaultSuitCount: 1,
         requireFullColumnsBeforeDeal: false,
         historyLimit: 300,
         moveAnimationMs: 320,
@@ -13,7 +14,8 @@
 
     const PB_KEYS = {
         moves: "spiderBestMoves",
-        time: "spiderBestTime"
+        time: "spiderBestTime",
+        suitCount: "spiderSuitCount"
     };
 
     const RANK_LABELS = new Map([
@@ -32,11 +34,13 @@
         [13, "K"]
     ]);
 
-    const SUIT = "\u2660";
+    const SUITS = ["\u2660", "\u2665", "\u2663", "\u2666"];
+    const RED_SUITS = new Set(["\u2665", "\u2666"]);
 
     const state = {
         tableau: [],
         stock: [],
+        suitCount: CONFIG.defaultSuitCount,
         completed: 0,
         moves: 0,
         history: [],
@@ -56,7 +60,9 @@
 
     document.addEventListener("DOMContentLoaded", () => {
         cacheElements();
+        restoreSuitPreference();
         bindControls();
+        migrateLegacyPBs();
         loadPBs();
         newGame();
     });
@@ -70,6 +76,8 @@
             "stockBtn",
             "stockVisual",
             "stockText",
+            "suitModeSelect",
+            "completedSuitIcon",
             "newGameBtn",
             "clearPBsBtn",
             "undoBtn",
@@ -97,6 +105,50 @@
         els.hintBtn.addEventListener("click", showHint);
         els.stockBtn.addEventListener("click", dealFromStock);
         els.modalNextGameBtn.addEventListener("click", newGame);
+        if (els.suitModeSelect) els.suitModeSelect.addEventListener("change", onSuitModeChange);
+    }
+
+    function restoreSuitPreference() {
+        const savedSuitCount = parseSuitCount(localStorage.getItem(PB_KEYS.suitCount));
+        state.suitCount = savedSuitCount || CONFIG.defaultSuitCount;
+        if (els.suitModeSelect) els.suitModeSelect.value = String(state.suitCount);
+    }
+
+    function onSuitModeChange(event) {
+        if (state.animating) {
+            event.currentTarget.value = String(state.suitCount);
+            return;
+        }
+
+        const nextSuitCount = parseSuitCount(event.currentTarget.value) || CONFIG.defaultSuitCount;
+        if (nextSuitCount === state.suitCount) return;
+
+        if (hasGameInProgress() && !window.confirm("Changing suits starts a new game. Continue?")) {
+            event.currentTarget.value = String(state.suitCount);
+            return;
+        }
+
+        state.suitCount = nextSuitCount;
+        localStorage.setItem(PB_KEYS.suitCount, String(state.suitCount));
+        loadPBs();
+        newGame();
+    }
+
+    function parseSuitCount(value) {
+        const parsed = Number.parseInt(value, 10);
+        return CONFIG.allowedSuitCounts.includes(parsed) ? parsed : null;
+    }
+
+    function hasGameInProgress() {
+        return !state.won && (state.moves > 0 || state.timerRunning || state.history.length > 0);
+    }
+
+    function suitModeLabel(suitCount = state.suitCount) {
+        return `${suitCount} ${suitCount === 1 ? "Suit" : "Suits"}`;
+    }
+
+    function completedSuitIconText() {
+        return SUITS.slice(0, state.suitCount).join("");
     }
 
     function newGame() {
@@ -137,14 +189,18 @@
 
     function makeDeck() {
         const deck = [];
+        const activeSuits = SUITS.slice(0, state.suitCount);
+        const copiesPerSuit = CONFIG.totalRuns / state.suitCount;
         let id = 1;
 
-        for (let copy = 0; copy < CONFIG.copiesPerRank; copy += 1) {
-            for (let rank = 1; rank <= 13; rank += 1) {
-                deck.push({id, rank, faceUp: false});
-                id += 1;
+        activeSuits.forEach((suit) => {
+            for (let copy = 0; copy < copiesPerSuit; copy += 1) {
+                for (let rank = 1; rank <= 13; rank += 1) {
+                    deck.push({id, rank, suit, faceUp: false});
+                    id += 1;
+                }
             }
-        }
+        });
 
         return deck;
     }
@@ -161,6 +217,11 @@
         els.completedText.textContent = `${state.completed} of ${CONFIG.totalRuns}`;
         els.newGameBtn.disabled = state.animating;
         els.clearPBsBtn.disabled = state.animating;
+        if (els.suitModeSelect) els.suitModeSelect.disabled = state.animating;
+        if (els.completedSuitIcon) {
+            els.completedSuitIcon.textContent = completedSuitIconText();
+            els.completedSuitIcon.classList.toggle("multi-suit", state.suitCount > 1);
+        }
         els.undoBtn.disabled = state.animating || state.history.length === 0;
         els.hintBtn.disabled = state.animating || state.won;
         els.stockBtn.disabled = state.animating || state.stock.length === 0 || state.won;
@@ -221,6 +282,7 @@
         cardEl.dataset.column = String(col);
         cardEl.dataset.index = String(index);
         cardEl.dataset.cardId = String(card.id);
+        cardEl.dataset.suit = card.suit;
         cardEl.style.top = `calc(${index} * var(--overlap))`;
         cardEl.style.zIndex = String(index + 1);
         cardEl.setAttribute("role", "button");
@@ -233,7 +295,7 @@
             return cardEl;
         }
 
-        cardEl.classList.add("face-up", movable ? "playable" : "blocked");
+        cardEl.classList.add("face-up", suitColorClass(card), movable ? "playable" : "blocked");
         cardEl.draggable = movable;
         if (isHintSource) cardEl.classList.add("hint-source");
 
@@ -241,9 +303,9 @@
         const stackText = stackLength > 1 ? `${stackLength}-card stack starting with ${cardName(card)}` : cardName(card);
         cardEl.setAttribute("aria-label", `${stackText} in column ${col + 1}`);
         cardEl.innerHTML = `
-            <span class="corner top"><span>${rankLabel(card.rank)}</span><span>${SUIT}</span></span>
-            <span class="pip">${SUIT}</span>
-            <span class="corner bottom"><span>${rankLabel(card.rank)}</span><span>${SUIT}</span></span>
+            <span class="corner top"><span>${rankLabel(card.rank)}</span><span>${card.suit}</span></span>
+            <span class="pip">${card.suit}</span>
+            <span class="corner bottom"><span>${rankLabel(card.rank)}</span><span>${card.suit}</span></span>
         `;
 
         cardEl.addEventListener("click", onCardClick);
@@ -567,7 +629,7 @@
         for (let i = index; i < pile.length - 1; i += 1) {
             const current = pile[i];
             const below = pile[i + 1];
-            if (!below.faceUp || current.rank !== below.rank + 1) return false;
+            if (!isSameSuitSequence(current, below)) return false;
         }
 
         return true;
@@ -582,7 +644,7 @@
         if (destPile.length === 0) return true;
 
         const destTop = destPile[destPile.length - 1];
-        return destTop.faceUp && destTop.rank === movingCard.rank + 1;
+        return canPlaceOn(destTop, movingCard);
     }
 
     function findBestMoveForSource(srcCol, startIndex, skipLowValueMoves) {
@@ -619,7 +681,7 @@
         const stack = srcPile.slice(startIndex);
         const destEmpty = destPile.length === 0;
         const revealsHidden = startIndex > 0 && !srcPile[startIndex - 1].faceUp;
-        const breaksRun = startIndex > 0 && srcPile[startIndex - 1].faceUp && srcPile[startIndex - 1].rank === stack[0].rank + 1;
+        const breaksRun = startIndex > 0 && isSameSuitSequence(srcPile[startIndex - 1], stack[0]);
 
         let score = 0;
         if (wouldCompleteRun(srcCol, startIndex, destCol)) score += 10000;
@@ -652,7 +714,7 @@
         const movingCard = srcPile[startIndex];
         const destTop = destPile[destPile.length - 1];
         if (!sourceAnchor.faceUp || !destTop.faceUp || sourceAnchor.rank !== destTop.rank) return false;
-        if (sourceAnchor.rank !== movingCard.rank + 1) return false;
+        if (sourceAnchor.suit !== destTop.suit || !isSameSuitSequence(sourceAnchor, movingCard)) return false;
 
         return runLengthEndingAt(srcPile, startIndex - 1) >= endRunLength(destPile);
     }
@@ -664,7 +726,7 @@
         for (let i = index - 1; i >= 0; i -= 1) {
             const upper = pile[i];
             const lower = pile[i + 1];
-            if (!upper.faceUp || upper.rank !== lower.rank + 1) break;
+            if (!isSameSuitSequence(upper, lower)) break;
             length += 1;
         }
 
@@ -735,10 +797,11 @@
     function isCompleteRunAtEnd(pile) {
         if (pile.length < 13) return false;
         const start = pile.length - 13;
+        const suit = pile[start].suit;
         if (!pile[start].faceUp || pile[start].rank !== 13) return false;
 
         for (let i = start; i < pile.length; i += 1) {
-            if (!pile[i].faceUp || pile[i].rank !== 13 - (i - start)) return false;
+            if (!pile[i].faceUp || pile[i].rank !== 13 - (i - start) || pile[i].suit !== suit) return false;
         }
 
         return true;
@@ -762,7 +825,22 @@
     }
 
     function cardName(card) {
-        return `${rankLabel(card.rank)}${SUIT}`;
+        return `${rankLabel(card.rank)}${card.suit}`;
+    }
+
+    function canPlaceOn(destTop, movingCard) {
+        return destTop.faceUp && destTop.rank === movingCard.rank + 1;
+    }
+
+    function isSameSuitSequence(upperCard, lowerCard) {
+        return upperCard.faceUp
+            && lowerCard.faceUp
+            && upperCard.rank === lowerCard.rank + 1
+            && upperCard.suit === lowerCard.suit;
+    }
+
+    function suitColorClass(card) {
+        return RED_SUITS.has(card.suit) ? "red-suit" : "black-suit";
     }
 
     function rankLabel(rank) {
@@ -814,39 +892,64 @@
     }
 
     function loadPBs() {
-        const bestMoves = readPB(PB_KEYS.moves);
-        const bestTime = readPB(PB_KEYS.time);
+        const bestMoves = readPB("moves");
+        const bestTime = readPB("time");
         els.bestMoves.textContent = bestMoves === null ? "--" : String(bestMoves);
         els.bestTime.textContent = bestTime === null ? "--:--" : formatTime(bestTime);
     }
 
     function checkAndSavePBs(currentMoves, currentTimeSecs) {
-        const bestMoves = readPB(PB_KEYS.moves);
-        const bestTime = readPB(PB_KEYS.time);
+        const bestMoves = readPB("moves");
+        const bestTime = readPB("time");
         const records = {
             moves: bestMoves === null || currentMoves < bestMoves,
             time: bestTime === null || currentTimeSecs < bestTime
         };
 
-        if (records.moves) localStorage.setItem(PB_KEYS.moves, String(currentMoves));
-        if (records.time) localStorage.setItem(PB_KEYS.time, String(currentTimeSecs));
+        if (records.moves) localStorage.setItem(pbKey("moves"), String(currentMoves));
+        if (records.time) localStorage.setItem(pbKey("time"), String(currentTimeSecs));
         loadPBs();
         return records;
     }
 
-    function readPB(key) {
+    function migrateLegacyPBs() {
+        migrateLegacyPB("moves");
+        migrateLegacyPB("time");
+    }
+
+    function migrateLegacyPB(type) {
+        const legacyValue = readStoredNumber(PB_KEYS[type]);
+        const oneSuitKey = pbKey(type, 1);
+        const oneSuitValue = readStoredNumber(oneSuitKey);
+
+        if (legacyValue !== null && (oneSuitValue === null || legacyValue < oneSuitValue)) {
+            localStorage.setItem(oneSuitKey, String(legacyValue));
+        }
+
+        localStorage.removeItem(PB_KEYS[type]);
+    }
+
+    function readPB(type) {
+        return readStoredNumber(pbKey(type));
+    }
+
+    function readStoredNumber(key) {
         const value = localStorage.getItem(key);
         if (value === null) return null;
         const number = Number.parseInt(value, 10);
         return Number.isFinite(number) ? number : null;
     }
 
-    function clearPBs() {
-        if (readPB(PB_KEYS.moves) === null && readPB(PB_KEYS.time) === null) return;
-        if (!window.confirm("Clear your personal best moves and time?")) return;
+    function pbKey(type, suitCount = state.suitCount) {
+        return `${PB_KEYS[type]}:${suitCount}`;
+    }
 
-        localStorage.removeItem(PB_KEYS.moves);
-        localStorage.removeItem(PB_KEYS.time);
+    function clearPBs() {
+        if (readPB("moves") === null && readPB("time") === null) return;
+        if (!window.confirm(`Clear your ${suitModeLabel().toLowerCase()} personal best moves and time?`)) return;
+
+        localStorage.removeItem(pbKey("moves"));
+        localStorage.removeItem(pbKey("time"));
         setRecordBadges({moves: false, time: false});
         loadPBs();
     }

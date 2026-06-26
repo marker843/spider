@@ -32,7 +32,8 @@ body {
     color: #f7fff9;
 }
 
-button {
+button,
+select {
     font: inherit;
 }
 
@@ -94,6 +95,44 @@ button {
     gap: 0.55rem;
 }
 
+.suit-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.suit-control span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.suit-control select {
+    min-width: 6.5rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.22);
+    color: #fff;
+    padding: 0.3rem 0.55rem;
+    cursor: pointer;
+}
+
+.suit-control select:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.suit-control select option {
+    color: var(--ink);
+}
+
 .actions button,
 .stock,
 .stock-actions button {
@@ -121,6 +160,7 @@ button {
 }
 
 button:focus-visible,
+select:focus-visible,
 .card:focus-visible {
     outline: 3px solid var(--gold);
     outline-offset: 3px;
@@ -220,6 +260,12 @@ button:disabled {
     box-shadow: inset 0 0 0 2px #e5e7eb;
 }
 
+.mini-card.multi-suit {
+    font-size: 1rem;
+    line-height: 1;
+    letter-spacing: -0.12em;
+}
+
 .board-scroll {
     overflow-x: auto;
     padding: 0.2rem 0.15rem 1rem;
@@ -296,6 +342,14 @@ button:disabled {
     transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease, background 120ms ease, color 120ms ease;
 }
 
+.card.red-suit {
+    color: #b91c1c;
+}
+
+.card.black-suit {
+    color: var(--ink);
+}
+
 .card.face-down {
     cursor: default;
     background: radial-gradient(circle, rgba(255, 255, 255, 0.24) 2px, transparent 2px) 0 0 / 12px 12px, linear-gradient(135deg, #1e3a8a, #172554);
@@ -321,6 +375,14 @@ button:disabled {
     background: #d1d5db;
     color: #4b5563;
     box-shadow: 0 5px 12px rgba(0, 0, 0, 0.2), inset 0 0 0 2px rgba(75, 85, 99, 0.34);
+}
+
+.card.blocked.red-suit {
+    color: #991b1b;
+}
+
+.card.blocked.black-suit {
+    color: #374151;
 }
 
 .card.blocked .pip,
@@ -494,8 +556,18 @@ button:disabled {
     }
 
     .actions button,
+    .suit-control,
     .stock,
     .stock-actions button {
+        flex: 1;
+    }
+
+    .suit-control {
+        justify-content: center;
+    }
+
+    .suit-control select {
+        min-width: 0;
         flex: 1;
     }
 

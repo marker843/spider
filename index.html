@@ -23,6 +23,14 @@
     </div>
 
     <nav class="actions" aria-label="Game controls">
+        <label class="suit-control" for="suitModeSelect">
+            <span>Suits</span>
+            <select id="suitModeSelect" aria-label="Number of suits">
+                <option value="1">1 Suit</option>
+                <option value="2">2 Suits</option>
+                <option value="4">4 Suits</option>
+            </select>
+        </label>
         <button id="newGameBtn" type="button">New Game</button>
         <button id="clearPBsBtn" type="button">Clear Bests</button>
     </nav>
@@ -41,7 +49,7 @@
         </div>
 
         <div class="completed-box" aria-label="Completed runs">
-            <div class="mini-card" aria-hidden="true">&#9824;</div>
+            <div id="completedSuitIcon" class="mini-card" aria-hidden="true">&#9824;</div>
             <div>
                 <span>Completed</span>
                 <strong id="completedText">0 of 8</strong>
