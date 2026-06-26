@@ -7,7 +7,13 @@
         copiesPerRank: 8,
         requireFullColumnsBeforeDeal: false,
         historyLimit: 300,
-        moveAnimationMs: 320
+        moveAnimationMs: 320,
+        winModalDelayMs: 2000
+    };
+
+    const PB_KEYS = {
+        moves: "spiderBestMoves",
+        time: "spiderBestTime"
     };
 
     const RANK_LABELS = new Map([
@@ -26,6 +32,8 @@
         [13, "K"]
     ]);
 
+    const SUIT = "\u2660";
+
     const state = {
         tableau: [],
         stock: [],
@@ -38,6 +46,7 @@
         timerStartedAt: 0,
         elapsedAtPause: 0,
         timerId: null,
+        winModalTimerId: null,
         dragSource: null,
         dragJustEnded: false,
         animating: false
@@ -49,53 +58,54 @@
         cacheElements();
         bindControls();
         loadPBs();
-        newGame(false);
+        newGame();
     });
 
     function cacheElements() {
-        els.tableau = document.getElementById("tableau");
-        els.moves = document.getElementById("moves");
-        els.time = document.getElementById("time");
-        els.completedText = document.getElementById("completedText");
-        els.stockBtn = document.getElementById("stockBtn");
-        els.stockVisual = document.getElementById("stockVisual");
-        els.stockText = document.getElementById("stockText");
-        els.newGameBtn = document.getElementById("newGameBtn");
-        els.undoBtn = document.getElementById("undoBtn");
-        els.hintBtn = document.getElementById("hintBtn");
+        const ids = [
+            "tableau",
+            "moves",
+            "time",
+            "completedText",
+            "stockBtn",
+            "stockVisual",
+            "stockText",
+            "newGameBtn",
+            "clearPBsBtn",
+            "undoBtn",
+            "hintBtn",
+            "bestMoves",
+            "bestTime",
+            "winModal",
+            "finalMoves",
+            "finalTime",
+            "newRecordBadges",
+            "movesRecordBadge",
+            "timeRecordBadge",
+            "modalNextGameBtn"
+        ];
+
+        ids.forEach((id) => {
+            els[id] = document.getElementById(id);
+        });
     }
 
     function bindControls() {
-        els.newGameBtn.addEventListener("click", () => {
-            newGame(true);
-        });
-
+        els.newGameBtn.addEventListener("click", newGame);
+        els.clearPBsBtn.addEventListener("click", clearPBs);
         els.undoBtn.addEventListener("click", undo);
         els.hintBtn.addEventListener("click", showHint);
         els.stockBtn.addEventListener("click", dealFromStock);
-
-        document.getElementById("modalNextGameBtn").addEventListener("click", () => {
-            document.getElementById("winModal").classList.add("hidden");
-            newGame(true);
-        });
+        els.modalNextGameBtn.addEventListener("click", newGame);
     }
 
     function newGame() {
+        hideWinModal();
         stopTimer(true);
+        resetGameState();
 
         const deck = makeDeck();
         shuffle(deck);
-
-        state.tableau = Array.from({length: CONFIG.columns}, () => []);
-        state.stock = [];
-        state.completed = 0;
-        state.moves = 0;
-        state.history = [];
-        state.hint = null;
-        state.won = false;
-        state.dragSource = null;
-        state.dragJustEnded = false;
-        state.animating = false;
 
         for (let col = 0; col < CONFIG.columns; col += 1) {
             const count = col < 4 ? 6 : 5;
@@ -110,13 +120,28 @@
         render();
     }
 
+    function resetGameState() {
+        Object.assign(state, {
+            tableau: Array.from({length: CONFIG.columns}, () => []),
+            stock: [],
+            completed: 0,
+            moves: 0,
+            history: [],
+            hint: null,
+            won: false,
+            dragSource: null,
+            dragJustEnded: false,
+            animating: false
+        });
+    }
+
     function makeDeck() {
         const deck = [];
         let id = 1;
 
         for (let copy = 0; copy < CONFIG.copiesPerRank; copy += 1) {
             for (let rank = 1; rank <= 13; rank += 1) {
-                deck.push({id: id, rank: rank, faceUp: false});
+                deck.push({id, rank, faceUp: false});
                 id += 1;
             }
         }
@@ -135,6 +160,7 @@
         els.moves.textContent = String(state.moves);
         els.completedText.textContent = `${state.completed} of ${CONFIG.totalRuns}`;
         els.newGameBtn.disabled = state.animating;
+        els.clearPBsBtn.disabled = state.animating;
         els.undoBtn.disabled = state.animating || state.history.length === 0;
         els.hintBtn.disabled = state.animating || state.won;
         els.stockBtn.disabled = state.animating || state.stock.length === 0 || state.won;
@@ -162,30 +188,28 @@
         els.tableau.innerHTML = "";
 
         state.tableau.forEach((pile, col) => {
-            const column = document.createElement("div");
-            column.className = "column";
-            column.dataset.column = String(col);
-            column.dataset.label = `Col ${col + 1}`;
-            column.setAttribute("role", "list");
-            column.setAttribute("aria-label", `Column ${col + 1}`);
-            column.style.minHeight = `calc(var(--card-h) + ${Math.max(pile.length - 1, 0)} * var(--overlap) + 1.3rem)`;
-
-            if (pile.length === 0) column.classList.add("empty");
-            if (state.hint && state.hint.destCol === col) column.classList.add("hint-destination");
-
-            column.addEventListener("click", onColumnClick);
-            column.addEventListener("dragover", onColumnDragOver);
-            column.addEventListener("dragenter", onColumnDragEnter);
-            column.addEventListener("dragleave", onColumnDragLeave);
-            column.addEventListener("drop", onColumnDrop);
-
-            pile.forEach((card, index) => {
-                const cardEl = buildCard(card, col, index);
-                column.appendChild(cardEl);
-            });
-
+            const column = buildColumn(pile, col);
+            pile.forEach((card, index) => column.appendChild(buildCard(card, col, index)));
             els.tableau.appendChild(column);
         });
+    }
+
+    function buildColumn(pile, col) {
+        const column = document.createElement("div");
+        column.className = "column";
+        column.dataset.column = String(col);
+        column.dataset.label = `Col ${col + 1}`;
+        column.setAttribute("role", "list");
+        column.setAttribute("aria-label", `Column ${col + 1}`);
+        column.style.minHeight = `calc(var(--card-h) + ${Math.max(pile.length - 1, 0)} * var(--overlap) + 1.3rem)`;
+        column.classList.toggle("empty", pile.length === 0);
+        column.classList.toggle("hint-destination", Boolean(state.hint && state.hint.destCol === col));
+        column.addEventListener("click", onColumnClick);
+        column.addEventListener("dragover", onColumnDragOver);
+        column.addEventListener("dragenter", onColumnDragEnter);
+        column.addEventListener("dragleave", onColumnDragLeave);
+        column.addEventListener("drop", onColumnDrop);
+        return column;
     }
 
     function buildCard(card, col, index) {
@@ -209,49 +233,39 @@
             return cardEl;
         }
 
-        cardEl.classList.add("face-up");
-        cardEl.classList.add(movable ? "playable" : "blocked");
+        cardEl.classList.add("face-up", movable ? "playable" : "blocked");
+        cardEl.draggable = movable;
         if (isHintSource) cardEl.classList.add("hint-source");
 
         const stackLength = state.tableau[col].length - index;
         const stackText = stackLength > 1 ? `${stackLength}-card stack starting with ${cardName(card)}` : cardName(card);
         cardEl.setAttribute("aria-label", `${stackText} in column ${col + 1}`);
-        cardEl.draggable = movable;
-
         cardEl.innerHTML = `
-      <span class="corner top"><span>${rankLabel(card.rank)}</span><span>♠</span></span>
-      <span class="pip">♠</span>
-      <span class="corner bottom"><span>${rankLabel(card.rank)}</span><span>♠</span></span>
-    `;
+            <span class="corner top"><span>${rankLabel(card.rank)}</span><span>${SUIT}</span></span>
+            <span class="pip">${SUIT}</span>
+            <span class="corner bottom"><span>${rankLabel(card.rank)}</span><span>${SUIT}</span></span>
+        `;
 
         cardEl.addEventListener("click", onCardClick);
         cardEl.addEventListener("keydown", onCardKeydown);
         cardEl.addEventListener("dragstart", onCardDragStart);
         cardEl.addEventListener("dragend", onCardDragEnd);
-
         return cardEl;
     }
 
     function onCardClick(event) {
         event.stopPropagation();
-        if (state.dragJustEnded || state.won) return;
+        if (state.dragJustEnded || state.animating || state.won) return;
 
         const source = getSourceFromElement(event.currentTarget);
-
         if (!isMovableStart(source.col, source.index)) {
-            state.hint = null;
-            render();
+            clearHintAndRender();
             return;
         }
 
         const move = findBestMoveForSource(source.col, source.index, true);
-        if (!move) {
-            state.hint = null;
-            render();
-            return;
-        }
-
-        moveStack(source.col, source.index, move.destCol, "Moved");
+        if (move) moveStack(source.col, source.index, move.destCol);
+        else clearHintAndRender();
     }
 
     function onCardKeydown(event) {
@@ -262,8 +276,7 @@
 
     function onColumnClick(event) {
         if (event.target !== event.currentTarget || state.animating || state.won) return;
-        state.hint = null;
-        render();
+        clearHintAndRender();
     }
 
     function onCardDragStart(event) {
@@ -313,18 +326,19 @@
         event.preventDefault();
         event.currentTarget.classList.remove("drag-ok");
 
-        let source = state.dragSource;
-        if (!source) {
-            try {
-                source = JSON.parse(event.dataTransfer.getData("text/plain"));
-            } catch (_error) {
-                source = null;
-            }
-        }
-
+        const source = state.dragSource || getDragSourceFromEvent(event);
         if (!source) return;
+
         const destCol = Number(event.currentTarget.dataset.column);
-        moveStack(source.col, source.index, destCol, "Manual move");
+        moveStack(source.col, source.index, destCol);
+    }
+
+    function getDragSourceFromEvent(event) {
+        try {
+            return JSON.parse(event.dataTransfer.getData("text/plain"));
+        } catch (_error) {
+            return null;
+        }
     }
 
     function getSourceFromElement(element) {
@@ -343,13 +357,11 @@
         }
 
         if (CONFIG.requireFullColumnsBeforeDeal && state.tableau.some((pile) => pile.length === 0)) {
-            state.hint = null;
-            render();
+            clearHintAndRender();
             return;
         }
 
         const animation = captureDealAnimation();
-
         saveHistory();
         startTimerIfNeeded();
 
@@ -367,13 +379,11 @@
 
     function moveStack(srcCol, startIndex, destCol) {
         if (!canMoveTo(srcCol, startIndex, destCol)) {
-            state.hint = null;
-            render();
+            clearHintAndRender();
             return false;
         }
 
         const animation = captureMoveAnimation(srcCol, startIndex);
-
         saveHistory();
         startTimerIfNeeded();
 
@@ -402,16 +412,11 @@
         removeCompletedRuns();
 
         if (state.completed === CONFIG.totalRuns) {
+            const elapsedSeconds = getElapsedSeconds();
             state.won = true;
             stopTimer(false);
-
-            checkAndSavePBs(state.moves, getElapsedSeconds());
-
-            setTimeout(() => {
-                document.getElementById("winModal").classList.remove("hidden");
-                document.getElementById("finalMoves").textContent = state.moves;
-                document.getElementById("finalTime").textContent = formatTime(getElapsedSeconds());
-            }, 2000);
+            const records = checkAndSavePBs(state.moves, elapsedSeconds);
+            queueWinModal(records, elapsedSeconds);
         }
 
         render();
@@ -420,32 +425,28 @@
     function undo() {
         if (state.animating || state.history.length === 0) return;
 
+        const undoMoveCount = state.moves + 1;
         const snapshot = state.history.pop();
         state.tableau = clonePiles(snapshot.tableau);
-        state.stock = snapshot.stock.map((card) => ({...card}));
+        state.stock = snapshot.stock.map(cloneCard);
         state.completed = snapshot.completed;
-        state.moves = snapshot.moves;
+        state.moves = undoMoveCount;
         state.won = snapshot.won;
         state.hint = null;
+        hideWinModal();
 
-        if (!state.won && state.elapsedAtPause > 0 && !state.timerRunning) {
-            resumeTimer();
-        }
-
+        if (!state.won && state.elapsedAtPause > 0 && !state.timerRunning) resumeTimer();
         render();
     }
 
     function showHint() {
         if (state.animating || state.won) return;
+        state.hint = findBestGlobalMove();
+        render();
+    }
 
-        const hint = findBestGlobalMove();
-        if (!hint) {
-            state.hint = null;
-            render();
-            return;
-        }
-
-        state.hint = hint;
+    function clearHintAndRender() {
+        state.hint = null;
         render();
     }
 
@@ -453,17 +454,15 @@
         const pile = state.tableau[srcCol];
         if (!pile || startIndex < 0 || startIndex >= pile.length) return null;
 
-        const cards = pile.slice(startIndex).map((card) => {
-            const element = els.tableau.querySelector(`[data-card-id="${card.id}"]`);
-            return {
+        const cards = pile.slice(startIndex)
+            .map((card) => ({
                 id: card.id,
-                rect: element ? element.getBoundingClientRect() : null
-            };
-        }).filter((item) => item.rect);
+                rect: getCardRect(card.id)
+            }))
+            .filter((item) => item.rect);
 
         return cards.length > 0 ? {cards} : null;
     }
-
 
     function captureDealAnimation() {
         if (!shouldAnimateMoves()) return null;
@@ -479,9 +478,13 @@
         };
     }
 
+    function getCardRect(cardId) {
+        const element = els.tableau.querySelector(`[data-card-id="${cardId}"]`);
+        return element ? element.getBoundingClientRect() : null;
+    }
+
     function shouldAnimateMoves() {
-        return CONFIG.moveAnimationMs > 0
-            && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        return CONFIG.moveAnimationMs > 0 && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
 
     function animateMovedStack(animation, onDone) {
@@ -493,42 +496,19 @@
 
             const targetRect = target.getBoundingClientRect();
             const startRect = item.rect;
+            if (Math.abs(targetRect.left - startRect.left) < 1 && Math.abs(targetRect.top - startRect.top) < 1) return;
 
-            // Do nothing if the card hasn't moved.
-            if (Math.abs(targetRect.left - startRect.left) < 1 && Math.abs(targetRect.top - startRect.top) < 1) {
-                return;
-            }
-
-            const clone = target.cloneNode(true);
-            clone.classList.add("motion-clone");
-            clone.removeAttribute("id");
-            clone.removeAttribute("data-column");
-            clone.removeAttribute("data-index");
-            clone.removeAttribute("data-card-id");
-
-            // Position the clone exactly where the card started.
-            clone.style.left = `${startRect.left}px`;
-            clone.style.top = `${startRect.top}px`;
-            clone.style.width = `${startRect.width}px`;
-            clone.style.height = `${startRect.height}px`;
-            clone.style.zIndex = String(9000 + stackOffset);
-
+            const clone = makeMotionClone(target, startRect, 9000 + stackOffset);
             target.classList.add("animation-hidden");
-            document.body.appendChild(clone);
 
-            // Animate the transform from the start position to the end position.
-            const effect = [
-                {transform: `translate(0, 0)`}, // Starts at its current position (which is the startRect)
-                {transform: `translate(${targetRect.left - startRect.left}px, ${targetRect.top - startRect.top}px)`} // Translates to the target position
-            ];
-
-            const timing = {
+            const player = clone.animate([
+                {transform: "translate(0, 0)"},
+                {transform: `translate(${targetRect.left - startRect.left}px, ${targetRect.top - startRect.top}px)`}
+            ], {
                 duration: CONFIG.moveAnimationMs,
                 easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
                 fill: "both"
-            };
-
-            const player = clone.animate(effect, timing);
+            });
 
             runningAnimations.push(player.finished.catch(() => null).then(() => {
                 target.classList.remove("animation-hidden");
@@ -548,42 +528,53 @@
         });
     }
 
+    function makeMotionClone(element, rect, zIndex) {
+        const clone = element.cloneNode(true);
+        clone.classList.add("motion-clone");
+        ["id", "data-column", "data-index", "data-card-id"].forEach((attr) => clone.removeAttribute(attr));
+        clone.style.left = `${rect.left}px`;
+        clone.style.top = `${rect.top}px`;
+        clone.style.width = `${rect.width}px`;
+        clone.style.height = `${rect.height}px`;
+        clone.style.zIndex = String(zIndex);
+        document.body.appendChild(clone);
+        return clone;
+    }
+
     function saveHistory() {
         state.history.push({
             tableau: clonePiles(state.tableau),
-            stock: state.stock.map((card) => ({...card})),
+            stock: state.stock.map(cloneCard),
             completed: state.completed,
-            moves: state.moves,
             won: state.won
         });
 
-        if (state.history.length > CONFIG.historyLimit) {
-            state.history.shift();
-        }
+        if (state.history.length > CONFIG.historyLimit) state.history.shift();
     }
 
     function clonePiles(piles) {
-        return piles.map((pile) => pile.map((card) => ({...card})));
+        return piles.map((pile) => pile.map(cloneCard));
+    }
+
+    function cloneCard(card) {
+        return {...card};
     }
 
     function isMovableStart(col, index) {
         const pile = state.tableau[col];
-        if (!pile || index < 0 || index >= pile.length) return false;
-        if (!pile[index].faceUp) return false;
+        if (!pile || index < 0 || index >= pile.length || !pile[index].faceUp) return false;
 
         for (let i = index; i < pile.length - 1; i += 1) {
             const current = pile[i];
             const below = pile[i + 1];
-            if (!below.faceUp) return false;
-            if (current.rank !== below.rank + 1) return false;
+            if (!below.faceUp || current.rank !== below.rank + 1) return false;
         }
 
         return true;
     }
 
     function canMoveTo(srcCol, startIndex, destCol) {
-        if (srcCol === destCol) return false;
-        if (!isMovableStart(srcCol, startIndex)) return false;
+        if (srcCol === destCol || !isMovableStart(srcCol, startIndex)) return false;
 
         const movingCard = state.tableau[srcCol][startIndex];
         const destPile = state.tableau[destCol];
@@ -594,17 +585,15 @@
         return destTop.faceUp && destTop.rank === movingCard.rank + 1;
     }
 
-    function findBestMoveForSource(srcCol, startIndex, skipPointlessEmptyTransfer) {
+    function findBestMoveForSource(srcCol, startIndex, skipLowValueMoves) {
         let best = null;
 
         for (let destCol = 0; destCol < CONFIG.columns; destCol += 1) {
             if (!canMoveTo(srcCol, startIndex, destCol)) continue;
-            if (skipPointlessEmptyTransfer && isPointlessEmptyTransfer(srcCol, startIndex, destCol)) continue;
+            if (skipLowValueMoves && isLowValueHintMove(srcCol, startIndex, destCol)) continue;
 
             const score = scoreMove(srcCol, startIndex, destCol);
-            if (!best || score > best.score) {
-                best = {srcCol, startIndex, destCol, score};
-            }
+            if (!best || score > best.score) best = {srcCol, startIndex, destCol, score};
         }
 
         return best;
@@ -614,13 +603,11 @@
         let best = null;
 
         for (let srcCol = 0; srcCol < CONFIG.columns; srcCol += 1) {
-            const pile = state.tableau[srcCol];
-            for (let startIndex = 0; startIndex < pile.length; startIndex += 1) {
-                if (!isMovableStart(srcCol, startIndex)) continue;
+            state.tableau[srcCol].forEach((_card, startIndex) => {
+                if (!isMovableStart(srcCol, startIndex)) return;
                 const move = findBestMoveForSource(srcCol, startIndex, true);
-                if (!move) continue;
-                if (!best || move.score > best.score) best = move;
-            }
+                if (move && (!best || move.score > best.score)) best = move;
+            });
         }
 
         return best;
@@ -630,34 +617,58 @@
         const srcPile = state.tableau[srcCol];
         const destPile = state.tableau[destCol];
         const stack = srcPile.slice(startIndex);
-        const movingLength = stack.length;
         const destEmpty = destPile.length === 0;
         const revealsHidden = startIndex > 0 && !srcPile[startIndex - 1].faceUp;
-        const breaksExistingRun = startIndex > 0 && srcPile[startIndex - 1].faceUp && srcPile[startIndex - 1].rank === stack[0].rank + 1;
+        const breaksRun = startIndex > 0 && srcPile[startIndex - 1].faceUp && srcPile[startIndex - 1].rank === stack[0].rank + 1;
 
         let score = 0;
-
         if (wouldCompleteRun(srcCol, startIndex, destCol)) score += 10000;
-        if (!destEmpty) {
-            score += 1200;
-            score += endRunLength(destPile) * 55;
-        } else {
-            score += 160;
-        }
 
+        score += destEmpty ? 160 : 1200 + endRunLength(destPile) * 55;
         if (revealsHidden) score += 900;
-        if (breaksExistingRun) score -= 275;
-        if (destEmpty && movingLength === 1 && !revealsHidden) score -= 180;
+        if (breaksRun) score -= 275;
+        if (destEmpty && stack.length === 1 && !revealsHidden) score -= 180;
         if (destEmpty && startIndex === 0) score -= 10000;
 
-        score += movingLength * 20;
+        score += stack.length * 20;
         score += (13 - stack[0].rank) * 2;
-
         return score;
+    }
+
+    function isLowValueHintMove(srcCol, startIndex, destCol) {
+        return isPointlessEmptyTransfer(srcCol, startIndex, destCol) || isRedundantTailTransfer(srcCol, startIndex, destCol);
     }
 
     function isPointlessEmptyTransfer(srcCol, startIndex, destCol) {
         return state.tableau[destCol].length === 0 && startIndex === 0 && state.tableau[srcCol].length > 0;
+    }
+
+    function isRedundantTailTransfer(srcCol, startIndex, destCol) {
+        const srcPile = state.tableau[srcCol];
+        const destPile = state.tableau[destCol];
+        if (startIndex === 0 || destPile.length === 0 || wouldCompleteRun(srcCol, startIndex, destCol)) return false;
+
+        const sourceAnchor = srcPile[startIndex - 1];
+        const movingCard = srcPile[startIndex];
+        const destTop = destPile[destPile.length - 1];
+        if (!sourceAnchor.faceUp || !destTop.faceUp || sourceAnchor.rank !== destTop.rank) return false;
+        if (sourceAnchor.rank !== movingCard.rank + 1) return false;
+
+        return runLengthEndingAt(srcPile, startIndex - 1) >= endRunLength(destPile);
+    }
+
+    function runLengthEndingAt(pile, index) {
+        if (index < 0 || index >= pile.length || !pile[index].faceUp) return 0;
+
+        let length = 1;
+        for (let i = index - 1; i >= 0; i -= 1) {
+            const upper = pile[i];
+            const lower = pile[i + 1];
+            if (!upper.faceUp || upper.rank !== lower.rank + 1) break;
+            length += 1;
+        }
+
+        return length;
     }
 
     function wouldCompleteRun(srcCol, startIndex, destCol) {
@@ -676,11 +687,9 @@
                 const pile = state.tableau[col];
                 if (!isCompleteRunAtEnd(pile)) continue;
 
-                const startIdx = pile.length - 13;
-                const runCards = pile.slice(startIdx);
-                const runElements = runCards.map(card => els.tableau.querySelector(`[data-card-id="${card.id}"]`));
+                const runCards = pile.slice(pile.length - 13);
+                const runElements = runCards.map((card) => els.tableau.querySelector(`[data-card-id="${card.id}"]`));
                 animateCompletedRun(runElements);
-
                 pile.splice(pile.length - 13, 13);
                 state.completed += 1;
                 removed += 1;
@@ -696,40 +705,29 @@
     function animateCompletedRun(elements) {
         if (!shouldAnimateMoves()) return;
 
-        elements.forEach((el, index) => {
-            if (!el) return;
+        elements.forEach((element, index) => {
+            if (!element) return;
 
-            const rect = el.getBoundingClientRect();
-            const clone = el.cloneNode(true);
-            clone.classList.add("motion-clone");
-            clone.style.left = `${rect.left}px`;
-            clone.style.top = `${rect.top}px`;
-            clone.style.width = `${rect.width}px`;
-            clone.style.height = `${rect.height}px`;
-            clone.style.zIndex = String(10000 + index);
-            document.body.appendChild(clone);
-
+            const rect = element.getBoundingClientRect();
+            const clone = makeMotionClone(element, rect, 10000 + index);
             const fallDirection = Math.random() > 0.5 ? 1 : -1;
-            const destX = (Math.random() * 400 * fallDirection);
+            const destX = Math.random() * 400 * fallDirection;
             const destY = window.innerHeight - rect.top + 300;
 
-            const effect = [
-                {transform: `translate(0, 0) rotate(0deg)`},
+            const player = clone.animate([
+                {transform: "translate(0, 0) rotate(0deg)"},
                 {
                     transform: `translate(${destX / 2}px, -150px) rotate(${Math.random() * 90 * fallDirection}deg)`,
                     offset: 0.3
                 },
                 {transform: `translate(${destX}px, ${destY}px) rotate(${Math.random() * 720 * fallDirection}deg)`}
-            ];
-
-            const timing = {
+            ], {
                 duration: 1200 + Math.random() * 600,
-                delay: index * 100, // Stagger them so they fly off sequentially
+                delay: index * 100,
                 easing: "cubic-bezier(0.4, 0, 0.8, 0.2)",
                 fill: "forwards"
-            };
+            });
 
-            const player = clone.animate(effect, timing);
             player.finished.catch(() => null).then(() => clone.remove());
         });
     }
@@ -740,8 +738,7 @@
         if (!pile[start].faceUp || pile[start].rank !== 13) return false;
 
         for (let i = start; i < pile.length; i += 1) {
-            const expectedRank = 13 - (i - start);
-            if (!pile[i].faceUp || pile[i].rank !== expectedRank) return false;
+            if (!pile[i].faceUp || pile[i].rank !== 13 - (i - start)) return false;
         }
 
         return true;
@@ -761,24 +758,11 @@
     }
 
     function endRunLength(pile) {
-        if (pile.length === 0) return 0;
-        const bottomIndex = pile.length - 1;
-        if (!pile[bottomIndex].faceUp) return 0;
-
-        let length = 1;
-        for (let i = bottomIndex - 1; i >= 0; i -= 1) {
-            const upper = pile[i];
-            const lower = pile[i + 1];
-            if (!upper.faceUp || !lower.faceUp) break;
-            if (upper.rank !== lower.rank + 1) break;
-            length += 1;
-        }
-
-        return length;
+        return runLengthEndingAt(pile, pile.length - 1);
     }
 
     function cardName(card) {
-        return `${rankLabel(card.rank)}♠`;
+        return `${rankLabel(card.rank)}${SUIT}`;
     }
 
     function rankLabel(rank) {
@@ -805,10 +789,7 @@
             state.timerId = null;
         }
 
-        if (state.timerRunning && !resetElapsed) {
-            state.elapsedAtPause = getElapsedSeconds();
-        }
-
+        if (state.timerRunning && !resetElapsed) state.elapsedAtPause = getElapsedSeconds();
         state.timerRunning = false;
         state.timerStartedAt = 0;
         if (resetElapsed) state.elapsedAtPause = 0;
@@ -821,45 +802,88 @@
     }
 
     function updateTimerDisplay() {
-        if (!els.time) return;
-        els.time.textContent = formatTime(getElapsedSeconds());
+        if (els.time) els.time.textContent = formatTime(getElapsedSeconds());
     }
 
     function formatTime(totalSeconds) {
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
-
-        if (hours > 0) {
-            return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-        }
-
-        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+        const mmss = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+        return hours > 0 ? `${hours}:${mmss}` : mmss;
     }
 
     function loadPBs() {
-        const bestMoves = localStorage.getItem("spiderBestMoves");
-        const bestTime = localStorage.getItem("spiderBestTime");
-
-        const bestMovesEl = document.getElementById("bestMoves");
-        const bestTimeEl = document.getElementById("bestTime");
-
-        bestMovesEl.textContent = bestMoves ? bestMoves : "--";
-        bestTimeEl.textContent = bestTime ? formatTime(parseInt(bestTime, 10)) : "--:--";
+        const bestMoves = readPB(PB_KEYS.moves);
+        const bestTime = readPB(PB_KEYS.time);
+        els.bestMoves.textContent = bestMoves === null ? "--" : String(bestMoves);
+        els.bestTime.textContent = bestTime === null ? "--:--" : formatTime(bestTime);
     }
 
     function checkAndSavePBs(currentMoves, currentTimeSecs) {
-        let bestMoves = localStorage.getItem("spiderBestMoves");
-        let bestTime = localStorage.getItem("spiderBestTime");
+        const bestMoves = readPB(PB_KEYS.moves);
+        const bestTime = readPB(PB_KEYS.time);
+        const records = {
+            moves: bestMoves === null || currentMoves < bestMoves,
+            time: bestTime === null || currentTimeSecs < bestTime
+        };
 
-        if (!bestMoves || currentMoves < parseInt(bestMoves, 10)) {
-            localStorage.setItem("spiderBestMoves", currentMoves);
-        }
-
-        if (!bestTime || currentTimeSecs < parseInt(bestTime, 10)) {
-            localStorage.setItem("spiderBestTime", currentTimeSecs);
-        }
-
+        if (records.moves) localStorage.setItem(PB_KEYS.moves, String(currentMoves));
+        if (records.time) localStorage.setItem(PB_KEYS.time, String(currentTimeSecs));
         loadPBs();
+        return records;
+    }
+
+    function readPB(key) {
+        const value = localStorage.getItem(key);
+        if (value === null) return null;
+        const number = Number.parseInt(value, 10);
+        return Number.isFinite(number) ? number : null;
+    }
+
+    function clearPBs() {
+        if (readPB(PB_KEYS.moves) === null && readPB(PB_KEYS.time) === null) return;
+        if (!window.confirm("Clear your personal best moves and time?")) return;
+
+        localStorage.removeItem(PB_KEYS.moves);
+        localStorage.removeItem(PB_KEYS.time);
+        setRecordBadges({moves: false, time: false});
+        loadPBs();
+    }
+
+    function queueWinModal(records, elapsedSeconds) {
+        const finalMoves = state.moves;
+        clearWinModalTimer();
+        state.winModalTimerId = window.setTimeout(() => {
+            state.winModalTimerId = null;
+            if (state.won) showWinModal(records, elapsedSeconds, finalMoves);
+        }, CONFIG.winModalDelayMs);
+    }
+
+    function clearWinModalTimer() {
+        if (!state.winModalTimerId) return;
+        window.clearTimeout(state.winModalTimerId);
+        state.winModalTimerId = null;
+    }
+
+    function showWinModal(records, elapsedSeconds, finalMoves) {
+        els.finalMoves.textContent = String(finalMoves);
+        els.finalTime.textContent = formatTime(elapsedSeconds);
+        setRecordBadges(records);
+        els.winModal.classList.remove("hidden");
+        els.winModal.setAttribute("aria-hidden", "false");
+    }
+
+    function hideWinModal() {
+        clearWinModalTimer();
+        els.winModal.classList.add("hidden");
+        els.winModal.setAttribute("aria-hidden", "true");
+        setRecordBadges({moves: false, time: false});
+    }
+
+    function setRecordBadges(records) {
+        els.movesRecordBadge.hidden = !records.moves;
+        els.timeRecordBadge.hidden = !records.time;
+        els.newRecordBadges.hidden = !records.moves && !records.time;
     }
 })();

@@ -24,6 +24,7 @@
 
     <nav class="actions" aria-label="Game controls">
         <button id="newGameBtn" type="button">New Game</button>
+        <button id="clearPBsBtn" type="button">Clear Bests</button>
     </nav>
 </header>
 
@@ -40,7 +41,7 @@
         </div>
 
         <div class="completed-box" aria-label="Completed runs">
-            <div class="mini-card" aria-hidden="true">♠</div>
+            <div class="mini-card" aria-hidden="true">&#9824;</div>
             <div>
                 <span>Completed</span>
                 <strong id="completedText">0 of 8</strong>
@@ -56,11 +57,17 @@
 <div id="winModal" class="modal hidden" aria-hidden="true">
     <div class="modal-content">
         <h2>You Won!</h2>
+        <div id="newRecordBadges" class="record-badges" hidden aria-live="polite">
+            <span id="movesRecordBadge" class="record-badge" hidden>New Best Moves</span>
+            <span id="timeRecordBadge" class="record-badge" hidden>New Best Time</span>
+        </div>
         <div class="final-stats">
             <p>Moves: <strong id="finalMoves">0</strong></p>
             <p>Time: <strong id="finalTime">00:00</strong></p>
         </div>
-        <button id="modalNextGameBtn" class="btn" type="button">Next Game</button>
+        <div class="modal-actions">
+            <button id="modalNextGameBtn" class="primary-button" type="button">Next Game</button>
+        </div>
     </div>
 </div>
 </body>
