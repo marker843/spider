@@ -255,7 +255,7 @@
 
     function onCardClick(event) {
         event.stopPropagation();
-        if (state.dragJustEnded || state.animating || state.won) return;
+        if (state.dragJustEnded || state.won) return;
 
         const source = getSourceFromElement(event.currentTarget);
         if (!isMovableStart(source.col, source.index)) {
