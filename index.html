@@ -1,56 +1,67 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Spider Solitaire</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/web-animations/2.3.2/web-animations.min.js"></script>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spider Solitaire</title>
+    <script src="script.js" defer></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web-animations/2.3.2/web-animations.min.js"></script>
 </head>
 <body>
-  <header class="top-bar">
-    <div class="stats" aria-label="Game stats">
-      <div class="stat">
-        <span class="stat-label">Moves</span>
-        <strong id="moves">0</strong>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Time</span>
-        <strong id="time">00:00</strong>
-      </div>
+<header class="top-bar">
+    <div class="stats-container">
+        <div class="current-stats">
+            <span>Moves: <strong id="moves">0</strong></span>
+            <span>Time: <strong id="time">00:00</strong></span>
+        </div>
+
+        <div class="pb-stats">
+            <span>Best Moves: <strong id="bestMoves">--</strong></span>
+            <span>Best Time: <strong id="bestTime">--:--</strong></span>
+        </div>
     </div>
 
     <nav class="actions" aria-label="Game controls">
-      <button id="newGameBtn" type="button">New Game</button>
+        <button id="newGameBtn" type="button">New Game</button>
     </nav>
-  </header>
+</header>
 
-  <main class="game-shell">
+<main class="game-shell">
     <section class="deal-row" aria-label="Stock and completed runs">
-      <button id="stockBtn" class="stock" type="button" aria-label="Deal one card to each column from the stock">
-        <span id="stockVisual" class="stock-visual" aria-hidden="true"></span>
-        <span id="stockText" class="stock-text">Deal</span>
-      </button>
+        <button id="stockBtn" class="stock" type="button" aria-label="Deal one card to each column from the stock">
+            <span id="stockVisual" class="stock-visual" aria-hidden="true"></span>
+            <span id="stockText" class="stock-text">Deal</span>
+        </button>
 
-      <div class="stock-actions" aria-label="Move controls">
-        <button id="undoBtn" type="button">Undo</button>
-        <button id="hintBtn" type="button">Hint</button>
-      </div>
-
-      <div class="completed-box" aria-label="Completed runs">
-        <div class="mini-card" aria-hidden="true">♠</div>
-        <div>
-          <span>Completed</span>
-          <strong id="completedText">0 of 8</strong>
+        <div class="stock-actions" aria-label="Move controls">
+            <button id="undoBtn" type="button">Undo</button>
+            <button id="hintBtn" type="button">Hint</button>
         </div>
-      </div>
+
+        <div class="completed-box" aria-label="Completed runs">
+            <div class="mini-card" aria-hidden="true">♠</div>
+            <div>
+                <span>Completed</span>
+                <strong id="completedText">0 of 8</strong>
+            </div>
+        </div>
     </section>
 
     <section class="board-scroll" aria-label="Spider Solitaire board">
-      <div id="tableau" class="tableau"></div>
+        <div id="tableau" class="tableau"></div>
     </section>
-  </main>
+</main>
 
-  <script src="script.js" defer></script>
+<div id="winModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-content">
+        <h2>You Won!</h2>
+        <div class="final-stats">
+            <p>Moves: <strong id="finalMoves">0</strong></p>
+            <p>Time: <strong id="finalTime">00:00</strong></p>
+        </div>
+        <button id="modalNextGameBtn" class="btn" type="button">Next Game</button>
+    </div>
+</div>
 </body>
 </html>
